@@ -8,7 +8,6 @@ class FastRCNNPredictor(nn.Module):
     def __init__(self, config, in_channels):
         super(FastRCNNPredictor, self).__init__()
         assert in_channels is not None
-
         num_inputs = in_channels
 
         num_classes = config.MODEL.ROI_BOX_HEAD.NUM_CLASSES
@@ -51,10 +50,10 @@ class FPNPredictor(nn.Module):
         if x.ndimension() == 4:
             assert list(x.shape[2:]) == [1, 1]
             x = x.view(x.size(0), -1)
-        scores = self.cls_score(x)
-        bbox_deltas = self.bbox_pred(x)
+        cls_logit = self.cls_score(x)
+        bbox_pred = self.bbox_pred(x)
 
-        return scores, bbox_deltas
+        return cls_logit, bbox_pred
 
 
 def make_roi_box_predictor(cfg, in_channels):

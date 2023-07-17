@@ -3,7 +3,9 @@ import torch
 
 from .box_head.box_head import build_roi_box_head
 from .mask_head.mask_head import build_roi_mask_head
+from .attribute_head.attribute_head import build_roi_attribute_head
 from .keypoint_head.keypoint_head import build_roi_keypoint_head
+from .relation_head.relation_head import build_roi_relation_head
 
 
 class CombinedROIHeads(torch.nn.ModuleDict):
@@ -20,11 +22,18 @@ class CombinedROIHeads(torch.nn.ModuleDict):
         if cfg.MODEL.KEYPOINT_ON and cfg.MODEL.ROI_KEYPOINT_HEAD.SHARE_BOX_FEATURE_EXTRACTOR:
             self.keypoint.feature_extractor = self.box.feature_extractor
 
-    def forward(self, features, proposals, targets=None):
+    def forward(self, features, proposals, targets=None, logger=None):
         losses = {}
-        # TODO rename x to roi_box_features, if it doesn't increase memory consumption
         x, detections, loss_box = self.box(features, proposals, targets)
-        losses.update(loss_box)
+        if not self.cfg.MODEL.RELATION_ON:
+            # During the relationship training stage, the bbox_proposal_network should be fixed, and no loss. 
+            losses.update(loss_box)
+
+        if self.cfg.MODEL.ATTRIBUTE_ON:
+            # Attribute head don't have a separate feature extractor
+            z, detections, loss_attribute = self.attribute(features, detections, targets)
+            losses.update(loss_attribute)
+
         if self.cfg.MODEL.MASK_ON:
             mask_features = features
             # optimization: during training, if we share the feature extractor between
@@ -52,6 +61,14 @@ class CombinedROIHeads(torch.nn.ModuleDict):
             # this makes the API consistent during training and testing
             x, detections, loss_keypoint = self.keypoint(keypoint_features, detections, targets)
             losses.update(loss_keypoint)
+
+        if self.cfg.MODEL.RELATION_ON:
+            # it may be not safe to share features due to post processing
+            # During training, self.box() will return the unaltered proposals as "detections"
+            # this makes the API consistent during training and testing
+            x, detections, loss_relation = self.relation(features, detections, targets, logger)
+            losses.update(loss_relation)
+
         return x, detections, losses
 
 
@@ -68,6 +85,10 @@ def build_roi_heads(cfg, in_channels):
         roi_heads.append(("mask", build_roi_mask_head(cfg, in_channels)))
     if cfg.MODEL.KEYPOINT_ON:
         roi_heads.append(("keypoint", build_roi_keypoint_head(cfg, in_channels)))
+    if cfg.MODEL.RELATION_ON:
+        roi_heads.append(("relation", build_roi_relation_head(cfg, in_channels)))
+    if cfg.MODEL.ATTRIBUTE_ON:
+        roi_heads.append(("attribute", build_roi_attribute_head(cfg, in_channels)))
 
     # combine individual heads in a single module
     if roi_heads:

@@ -58,10 +58,8 @@ class BinaryMaskList(object):
             if len(masks) == 0:
                 masks = torch.empty([0, size[1], size[0]])  # num_instances = 0!
             elif isinstance(masks[0], torch.Tensor):
-                masks = torch.stack(masks, dim=0).clone()
+                masks = torch.stack(masks, dim=2).clone()
             elif isinstance(masks[0], dict) and "counts" in masks[0]:
-                if(isinstance(masks[0]["counts"], (list, tuple))):
-                    masks = mask_utils.frPyObjects(masks, size[1], size[0])
                 # RLE interpretation
                 rle_sizes = [tuple(inst["size"]) for inst in masks]
 
@@ -441,7 +439,7 @@ class PolygonList(object):
             )
         else:
             size = self.size
-            masks = torch.empty([0, size[1], size[0]], dtype=torch.bool)
+            masks = torch.empty([0, size[1], size[0]], dtype=torch.uint8)
 
         return BinaryMaskList(masks, size=self.size)
 
@@ -456,7 +454,7 @@ class PolygonList(object):
         else:
             # advanced indexing on a single dimension
             selected_polygons = []
-            if isinstance(item, torch.Tensor) and item.dtype == torch.bool:
+            if isinstance(item, torch.Tensor) and item.dtype == torch.uint8:
                 item = item.nonzero()
                 item = item.squeeze(1) if item.numel() > 0 else item
                 item = item.tolist()

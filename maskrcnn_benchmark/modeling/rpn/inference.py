@@ -25,6 +25,7 @@ class RPNPostProcessor(torch.nn.Module):
         box_coder=None,
         fpn_post_nms_top_n=None,
         fpn_post_nms_per_batch=True,
+        add_gt=True,
     ):
         """
         Arguments:
@@ -40,6 +41,7 @@ class RPNPostProcessor(torch.nn.Module):
         self.post_nms_top_n = post_nms_top_n
         self.nms_thresh = nms_thresh
         self.min_size = min_size
+        self.add_gt = add_gt
 
         if box_coder is None:
             box_coder = BoxCoder(weights=(1.0, 1.0, 1.0, 1.0))
@@ -113,7 +115,7 @@ class RPNPostProcessor(torch.nn.Module):
             boxlist.add_field("objectness", score)
             boxlist = boxlist.clip_to_image(remove_empty=False)
             boxlist = remove_small_boxes(boxlist, self.min_size)
-            boxlist = boxlist_nms(
+            boxlist, _ = boxlist_nms(
                 boxlist,
                 self.nms_thresh,
                 max_proposals=self.post_nms_top_n,
@@ -146,7 +148,7 @@ class RPNPostProcessor(torch.nn.Module):
             boxlists = self.select_over_all_levels(boxlists)
 
         # append ground-truth bboxes to proposals
-        if self.training and targets is not None:
+        if self.training and (targets is not None) and self.add_gt:
             boxlists = self.add_gt_proposals(boxlists, targets)
 
         return boxlists
@@ -165,7 +167,7 @@ class RPNPostProcessor(torch.nn.Module):
             box_sizes = [len(boxlist) for boxlist in boxlists]
             post_nms_top_n = min(self.fpn_post_nms_top_n, len(objectness))
             _, inds_sorted = torch.topk(objectness, post_nms_top_n, dim=0, sorted=True)
-            inds_mask = torch.zeros_like(objectness, dtype=torch.bool)
+            inds_mask = torch.zeros_like(objectness, dtype=torch.uint8)
             inds_mask[inds_sorted] = 1
             inds_mask = inds_mask.split(box_sizes)
             for i in range(num_images):
@@ -194,6 +196,7 @@ def make_rpn_postprocessor(config, rpn_box_coder, is_train):
     fpn_post_nms_per_batch = config.MODEL.RPN.FPN_POST_NMS_PER_BATCH
     nms_thresh = config.MODEL.RPN.NMS_THRESH
     min_size = config.MODEL.RPN.MIN_SIZE
+    add_gt = config.MODEL.ROI_RELATION_HEAD.ADD_GTBOX_TO_PROPOSAL_IN_TRAIN
     box_selector = RPNPostProcessor(
         pre_nms_top_n=pre_nms_top_n,
         post_nms_top_n=post_nms_top_n,
@@ -202,5 +205,6 @@ def make_rpn_postprocessor(config, rpn_box_coder, is_train):
         box_coder=rpn_box_coder,
         fpn_post_nms_top_n=fpn_post_nms_top_n,
         fpn_post_nms_per_batch=fpn_post_nms_per_batch,
+        add_gt=add_gt,
     )
     return box_selector

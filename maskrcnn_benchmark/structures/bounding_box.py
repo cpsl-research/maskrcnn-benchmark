@@ -35,9 +35,14 @@ class BoxList(object):
         self.size = image_size  # (image_width, image_height)
         self.mode = mode
         self.extra_fields = {}
+        self.triplet_extra_fields = []  # e.g. relation field, which is not the same size as object bboxes and should not respond to __getitem__ slicing v[item]
 
-    def add_field(self, field, field_data):
+    def add_field(self, field, field_data, is_triplet=False):
+        # if field in self.extra_fields:
+        #     print('{} is already in extra_fields. Try to replace with new data. '.format(field))
         self.extra_fields[field] = field_data
+        if is_triplet:
+            self.triplet_extra_fields.append(field)
 
     def get_field(self, field):
         return self.extra_fields[field]
@@ -105,7 +110,10 @@ class BoxList(object):
             for k, v in self.extra_fields.items():
                 if not isinstance(v, torch.Tensor):
                     v = v.resize(size, *args, **kwargs)
-                bbox.add_field(k, v)
+                if k in self.triplet_extra_fields:
+                    bbox.add_field(k, v, is_triplet=True)
+                else:
+                    bbox.add_field(k, v)
             return bbox
 
         ratio_width, ratio_height = ratios
@@ -122,7 +130,10 @@ class BoxList(object):
         for k, v in self.extra_fields.items():
             if not isinstance(v, torch.Tensor):
                 v = v.resize(size, *args, **kwargs)
-            bbox.add_field(k, v)
+            if k in self.triplet_extra_fields:
+                bbox.add_field(k, v, is_triplet=True)
+            else:
+                bbox.add_field(k, v)
 
         return bbox.convert(self.mode)
 
@@ -161,12 +172,15 @@ class BoxList(object):
         for k, v in self.extra_fields.items():
             if not isinstance(v, torch.Tensor):
                 v = v.transpose(method)
-            bbox.add_field(k, v)
+            if k in self.triplet_extra_fields:
+                bbox.add_field(k, v, is_triplet=True)
+            else:
+                bbox.add_field(k, v)
         return bbox.convert(self.mode)
 
     def crop(self, box):
         """
-        Crops a rectangular region from this bounding box. The box is a
+        Cropss a rectangular region from this bounding box. The box is a
         4-tuple defining the left, upper, right, and lower pixel
         coordinate.
         """
@@ -189,7 +203,10 @@ class BoxList(object):
         for k, v in self.extra_fields.items():
             if not isinstance(v, torch.Tensor):
                 v = v.crop(box)
-            bbox.add_field(k, v)
+            if k in self.triplet_extra_fields:
+                bbox.add_field(k, v, is_triplet=True)
+            else:
+                bbox.add_field(k, v)
         return bbox.convert(self.mode)
 
     # Tensor-like methods
@@ -199,13 +216,19 @@ class BoxList(object):
         for k, v in self.extra_fields.items():
             if hasattr(v, "to"):
                 v = v.to(device)
-            bbox.add_field(k, v)
+            if k in self.triplet_extra_fields:
+                bbox.add_field(k, v, is_triplet=True)
+            else:
+                bbox.add_field(k, v)
         return bbox
 
     def __getitem__(self, item):
         bbox = BoxList(self.bbox[item], self.size, self.mode)
         for k, v in self.extra_fields.items():
-            bbox.add_field(k, v[item])
+            if k in self.triplet_extra_fields:
+                bbox.add_field(k, v[item][:,item], is_triplet=True)
+            else:
+                bbox.add_field(k, v[item])
         return bbox
 
     def __len__(self):
@@ -235,13 +258,19 @@ class BoxList(object):
 
         return area
 
+    def copy(self):
+        return BoxList(self.bbox, self.size, self.mode)
+
     def copy_with_fields(self, fields, skip_missing=False):
         bbox = BoxList(self.bbox, self.size, self.mode)
         if not isinstance(fields, (list, tuple)):
             fields = [fields]
         for field in fields:
             if self.has_field(field):
-                bbox.add_field(field, self.get_field(field))
+                if field in self.triplet_extra_fields:
+                    bbox.add_field(field, self.get_field(field), is_triplet=True)
+                else:
+                    bbox.add_field(field, self.get_field(field))
             elif not skip_missing:
                 raise KeyError("Field '{}' not found in {}".format(field, self))
         return bbox

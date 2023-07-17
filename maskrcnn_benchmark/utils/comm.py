@@ -53,6 +53,9 @@ def all_gather(data):
     Returns:
         list[data]: list of data gathered from each rank
     """
+    to_device = "cuda"
+    #to_device = torch.device("cpu")
+    
     world_size = get_world_size()
     if world_size == 1:
         return [data]
@@ -60,11 +63,11 @@ def all_gather(data):
     # serialized to a Tensor
     buffer = pickle.dumps(data)
     storage = torch.ByteStorage.from_buffer(buffer)
-    tensor = torch.ByteTensor(storage).to("cuda")
+    tensor = torch.ByteTensor(storage).to(to_device)
 
     # obtain Tensor size of each rank
-    local_size = torch.LongTensor([tensor.numel()]).to("cuda")
-    size_list = [torch.LongTensor([0]).to("cuda") for _ in range(world_size)]
+    local_size = torch.LongTensor([tensor.numel()]).to(to_device)
+    size_list = [torch.LongTensor([0]).to(to_device) for _ in range(world_size)]
     dist.all_gather(size_list, local_size)
     size_list = [int(size.item()) for size in size_list]
     max_size = max(size_list)
@@ -74,9 +77,9 @@ def all_gather(data):
     # gathering tensors of different shapes
     tensor_list = []
     for _ in size_list:
-        tensor_list.append(torch.ByteTensor(size=(max_size,)).to("cuda"))
+        tensor_list.append(torch.ByteTensor(size=(max_size,)).to(to_device))
     if local_size != max_size:
-        padding = torch.ByteTensor(size=(max_size - local_size,)).to("cuda")
+        padding = torch.ByteTensor(size=(max_size - local_size,)).to(to_device)
         tensor = torch.cat((tensor, padding), dim=0)
     dist.all_gather(tensor_list, tensor)
 

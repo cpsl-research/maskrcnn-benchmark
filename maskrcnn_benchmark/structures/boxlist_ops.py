@@ -1,5 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 import torch
+import scipy.linalg
 
 from .bounding_box import BoxList
 
@@ -28,7 +29,7 @@ def boxlist_nms(boxlist, nms_thresh, max_proposals=-1, score_field="scores"):
     if max_proposals > 0:
         keep = keep[: max_proposals]
     boxlist = boxlist[keep]
-    return boxlist.convert(mode)
+    return boxlist.convert(mode), keep
 
 
 def remove_small_boxes(boxlist, min_size):
@@ -89,6 +90,48 @@ def boxlist_iou(boxlist1, boxlist2):
     return iou
 
 
+def boxlist_union(boxlist1, boxlist2):
+    """
+    Compute the union region of two set of boxes
+
+    Arguments:
+      box1: (BoxList) bounding boxes, sized [N,4].
+      box2: (BoxList) bounding boxes, sized [N,4].
+
+    Returns:
+      (tensor) union, sized [N,4].
+    """
+    assert len(boxlist1) == len(boxlist2) and boxlist1.size == boxlist2.size
+    boxlist1 = boxlist1.convert("xyxy")
+    boxlist2 = boxlist2.convert("xyxy")
+    union_box = torch.cat((
+        torch.min(boxlist1.bbox[:,:2], boxlist2.bbox[:,:2]),
+        torch.max(boxlist1.bbox[:,2:], boxlist2.bbox[:,2:])
+        ),dim=1)
+    return BoxList(union_box, boxlist1.size, "xyxy")
+
+def boxlist_intersection(boxlist1, boxlist2):
+    """
+    Compute the intersection region of two set of boxes
+
+    Arguments:
+      box1: (BoxList) bounding boxes, sized [N,4].
+      box2: (BoxList) bounding boxes, sized [N,4].
+
+    Returns:
+      (tensor) intersection, sized [N,4].
+    """
+    assert len(boxlist1) == len(boxlist2) and boxlist1.size == boxlist2.size
+    boxlist1 = boxlist1.convert("xyxy")
+    boxlist2 = boxlist2.convert("xyxy")
+    inter_box = torch.cat((
+        torch.max(boxlist1.bbox[:,:2], boxlist2.bbox[:,:2]),
+        torch.min(boxlist1.bbox[:,2:], boxlist2.bbox[:,2:])
+        ),dim=1)
+    invalid_bbox = torch.max((inter_box[:,0] >= inter_box[:,2]).long(), (inter_box[:,1] >= inter_box[:,3]).long())
+    inter_box[invalid_bbox > 0] = 0
+    return BoxList(inter_box, boxlist1.size, "xyxy")
+
 # TODO redundant, remove
 def _cat(tensors, dim=0):
     """
@@ -123,7 +166,12 @@ def cat_boxlist(bboxes):
     cat_boxes = BoxList(_cat([bbox.bbox for bbox in bboxes], dim=0), size, mode)
 
     for field in fields:
-        data = _cat([bbox.get_field(field) for bbox in bboxes], dim=0)
-        cat_boxes.add_field(field, data)
+        if field in bboxes[0].triplet_extra_fields:
+            triplet_list = [bbox.get_field(field).numpy() for bbox in bboxes]
+            data = torch.from_numpy(scipy.linalg.block_diag(*triplet_list))
+            cat_boxes.add_field(field, data, is_triplet=True)
+        else:
+            data = _cat([bbox.get_field(field) for bbox in bboxes], dim=0)
+            cat_boxes.add_field(field, data)
 
     return cat_boxes

@@ -76,7 +76,7 @@ class RPNHead(nn.Module):
     Adds a simple RPN Head with classification and regression heads
     """
 
-    def __init__(self, cfg, in_channels, num_anchors):
+    def __init__(self, cfg, in_channels, mid_channels, num_anchors):
         """
         Arguments:
             cfg              : config
@@ -85,7 +85,7 @@ class RPNHead(nn.Module):
         """
         super(RPNHead, self).__init__()
         self.conv = nn.Conv2d(
-            in_channels, in_channels, kernel_size=3, stride=1, padding=1
+            in_channels, mid_channels, kernel_size=3, stride=1, padding=1
         )
         self.cls_logits = nn.Conv2d(in_channels, num_anchors, kernel_size=1, stride=1)
         self.bbox_pred = nn.Conv2d(
@@ -108,8 +108,8 @@ class RPNHead(nn.Module):
 
 class RPNModule(torch.nn.Module):
     """
-    Module for RPN computation. Takes feature maps from the backbone and outputs 
-    RPN proposals and losses. Works for both FPN and non-FPN.
+    Module for RPN computation. Takes feature maps from the backbone and RPN
+    proposals and losses. Works for both FPN and non-FPN.
     """
 
     def __init__(self, cfg, in_channels):
@@ -121,7 +121,7 @@ class RPNModule(torch.nn.Module):
 
         rpn_head = registry.RPN_HEADS[cfg.MODEL.RPN.RPN_HEAD]
         head = rpn_head(
-            cfg, in_channels, anchor_generator.num_anchors_per_location()[0]
+            cfg, in_channels, cfg.MODEL.RPN.RPN_MID_CHANNEL, anchor_generator.num_anchors_per_location()[0]
         )
 
         rpn_box_coder = BoxCoder(weights=(1.0, 1.0, 1.0, 1.0))

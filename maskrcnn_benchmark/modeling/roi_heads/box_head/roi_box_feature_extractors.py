@@ -52,7 +52,7 @@ class FPN2MLPFeatureExtractor(nn.Module):
     Heads for FPN for classification
     """
 
-    def __init__(self, cfg, in_channels):
+    def __init__(self, cfg, in_channels, half_out=False, cat_all_levels=False):
         super(FPN2MLPFeatureExtractor, self).__init__()
 
         resolution = cfg.MODEL.ROI_BOX_HEAD.POOLER_RESOLUTION
@@ -62,14 +62,23 @@ class FPN2MLPFeatureExtractor(nn.Module):
             output_size=(resolution, resolution),
             scales=scales,
             sampling_ratio=sampling_ratio,
+            in_channels=in_channels,
+            cat_all_levels=cat_all_levels,
         )
         input_size = in_channels * resolution ** 2
         representation_size = cfg.MODEL.ROI_BOX_HEAD.MLP_HEAD_DIM
         use_gn = cfg.MODEL.ROI_BOX_HEAD.USE_GN
         self.pooler = pooler
         self.fc6 = make_fc(input_size, representation_size, use_gn)
-        self.fc7 = make_fc(representation_size, representation_size, use_gn)
-        self.out_channels = representation_size
+
+        if half_out:
+            out_dim = int(representation_size / 2)
+        else:
+            out_dim = representation_size
+        
+        self.fc7 = make_fc(representation_size, out_dim, use_gn)
+        self.resize_channels = input_size
+        self.out_channels = out_dim
 
     def forward(self, x, proposals):
         x = self.pooler(x, proposals)
@@ -78,6 +87,12 @@ class FPN2MLPFeatureExtractor(nn.Module):
         x = F.relu(self.fc6(x))
         x = F.relu(self.fc7(x))
 
+        return x
+
+    def forward_without_pool(self, x):
+        x = x.view(x.size(0), -1)
+        x = F.relu(self.fc6(x))
+        x = F.relu(self.fc7(x))
         return x
 
 
@@ -144,8 +159,8 @@ class FPNXconv1fcFeatureExtractor(nn.Module):
         return x
 
 
-def make_roi_box_feature_extractor(cfg, in_channels):
+def make_roi_box_feature_extractor(cfg, in_channels, half_out=False, cat_all_levels=False):
     func = registry.ROI_BOX_FEATURE_EXTRACTORS[
         cfg.MODEL.ROI_BOX_HEAD.FEATURE_EXTRACTOR
     ]
-    return func(cfg, in_channels)
+    return func(cfg, in_channels, half_out, cat_all_levels)

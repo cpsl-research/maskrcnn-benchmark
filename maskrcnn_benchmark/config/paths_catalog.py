@@ -2,10 +2,12 @@
 """Centralized catalog of paths."""
 
 import os
-from copy import deepcopy
+import copy
+
 
 class DatasetCatalog(object):
-    DATA_DIR = "datasets"
+    #DATA_DIR = "/home/users/alatif/data/ImageCorpora/"
+    DATA_DIR = "/media/rafi/Samsung_T5/_DATASETS/"
     DATASETS = {
         "coco_2017_train": {
             "img_dir": "coco/train2017",
@@ -92,9 +94,6 @@ class DatasetCatalog(object):
             "split": "test"
             # PASCAL VOC2012 doesn't made the test annotations available, so there's no json annotation
         },
-
-        ##############################################
-        # These ones are deprecated, should be removed
         "cityscapes_fine_instanceonly_seg_train_cocostyle": {
             "img_dir": "cityscapes/images",
             "ann_file": "cityscapes/annotations/instancesonly_filtered_gtFine_train.json"
@@ -107,50 +106,23 @@ class DatasetCatalog(object):
             "img_dir": "cityscapes/images",
             "ann_file": "cityscapes/annotations/instancesonly_filtered_gtFine_test.json"
         },
-        ##############################################
-
-        "cityscapes_poly_instance_train": {
-            "img_dir": "cityscapes/leftImg8bit/",
-            "ann_dir": "cityscapes/gtFine/",
-            "split": "train",
-            "mode": "poly",
+        "VG_stanford_filtered": {
+            "img_dir": "vg/VG_100K",
+            "roidb_file": "vg/VG-SGG.h5",
+            "dict_file": "vg/VG-SGG-dicts.json",
+            "image_file": "vg/image_data.json",
         },
-        "cityscapes_poly_instance_val": {
-            "img_dir": "cityscapes/leftImg8bit",
-            "ann_dir": "cityscapes/gtFine",
-            "split": "val",
-            "mode": "poly",
-        },
-        "cityscapes_poly_instance_minival": {
-            "img_dir": "cityscapes/leftImg8bit",
-            "ann_dir": "cityscapes/gtFine",
-            "split": "val",
-            "mode": "poly",
-            "mini": 10,
-        },
-        "cityscapes_mask_instance_train": {
-            "img_dir": "cityscapes/leftImg8bit/",
-            "ann_dir": "cityscapes/gtFine/",
-            "split": "train",
-            "mode": "mask",
-        },
-        "cityscapes_mask_instance_val": {
-            "img_dir": "cityscapes/leftImg8bit",
-            "ann_dir": "cityscapes/gtFine",
-            "split": "val",
-            "mode": "mask",
-        },
-        "cityscapes_mask_instance_minival": {
-            "img_dir": "cityscapes/leftImg8bit",
-            "ann_dir": "cityscapes/gtFine",
-            "split": "val",
-            "mode": "mask",
-            "mini": 10,
+        "VG_stanford_filtered_with_attribute": {
+            "img_dir": "vg/VG_100K",
+            "roidb_file": "vg/VG-SGG-with-attri.h5",
+            "dict_file": "vg/VG-SGG-dicts-with-attri.json",
+            "image_file": "vg/image_data.json",
+            "capgraphs_file": "vg/vg_capgraphs_anno.json",
         },
     }
 
     @staticmethod
-    def get(name):
+    def get(name, cfg):
         if "coco" in name:
             data_dir = DatasetCatalog.DATA_DIR
             attrs = DatasetCatalog.DATASETS[name]
@@ -173,12 +145,28 @@ class DatasetCatalog(object):
                 factory="PascalVOCDataset",
                 args=args,
             )
-        elif "cityscapes" in name:
+        elif ("VG" in name) or ('GQA' in name):
+            # name should be something like VG_stanford_filtered_train
+            p = name.rfind("_")
+            name, split = name[:p], name[p+1:]
+            assert name in DatasetCatalog.DATASETS and split in {'train', 'val', 'test'}
             data_dir = DatasetCatalog.DATA_DIR
-            attrs = deepcopy(DatasetCatalog.DATASETS[name])
-            attrs["img_dir"] = os.path.join(data_dir, attrs["img_dir"])
-            attrs["ann_dir"] = os.path.join(data_dir, attrs["ann_dir"])
-            return dict(factory="CityScapesDataset", args=attrs)
+            args = copy.deepcopy(DatasetCatalog.DATASETS[name])
+            for k, v in args.items():
+                args[k] = os.path.join(data_dir, v)
+            args['split'] = split
+            # IF MODEL.RELATION_ON is True, filter images with empty rels
+            # else set filter to False, because we need all images for pretraining detector
+            args['filter_non_overlap'] = (not cfg.MODEL.ROI_RELATION_HEAD.USE_GT_BOX) and cfg.MODEL.RELATION_ON and cfg.MODEL.ROI_RELATION_HEAD.REQUIRE_BOX_OVERLAP
+            args['filter_empty_rels'] = cfg.MODEL.RELATION_ON
+            args['flip_aug'] = cfg.MODEL.FLIP_AUG
+            args['custom_eval'] = cfg.TEST.CUSTUM_EVAL
+            args['custom_path'] = cfg.TEST.CUSTUM_PATH
+            return dict(
+                factory="VGDataset",
+                args=args,
+            )
+
         raise RuntimeError("Dataset not available: {}".format(name))
 
 

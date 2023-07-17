@@ -15,12 +15,11 @@ def do_coco_evaluation(
     predictions,
     box_only,
     output_folder,
+    logger,
     iou_types,
     expected_results,
     expected_results_sigma_tol,
 ):
-    logger = logging.getLogger("maskrcnn_benchmark.inference")
-
     if box_only:
         logger.info("Evaluating bbox proposals")
         areas = {"all": "", "small": "s", "medium": "m", "large": "l"}
@@ -33,7 +32,7 @@ def do_coco_evaluation(
                 key = "AR{}@{:d}".format(suffix, limit)
                 res.results["box_proposal"][key] = stats["ar"].item()
         logger.info(res)
-        check_expected_results(res, expected_results, expected_results_sigma_tol)
+        check_expected_results(res, expected_results, expected_results_sigma_tol, logger)
         if output_folder:
             torch.save(res, os.path.join(output_folder, "box_proposals.pth"))
         return
@@ -61,7 +60,7 @@ def do_coco_evaluation(
             )
             results.update(res)
     logger.info(results)
-    check_expected_results(results, expected_results, expected_results_sigma_tol)
+    check_expected_results(results, expected_results, expected_results_sigma_tol, logger)
     if output_folder:
         torch.save(results, os.path.join(output_folder, "coco_results.pth"))
     return results, coco_results
@@ -364,21 +363,14 @@ class COCOResults(object):
             res[metric] = s[idx]
 
     def __repr__(self):
-        results = '\n'
-        for task, metrics in self.results.items():
-            results += 'Task: {}\n'.format(task)
-            metric_names = metrics.keys()
-            metric_vals = ['{:.4f}'.format(v) for v in metrics.values()]
-            results += (', '.join(metric_names) + '\n')
-            results += (', '.join(metric_vals) + '\n')
-        return results
+        # TODO make it pretty
+        return repr(self.results)
 
 
-def check_expected_results(results, expected_results, sigma_tol):
+def check_expected_results(results, expected_results, sigma_tol, logger):
     if not expected_results:
         return
 
-    logger = logging.getLogger("maskrcnn_benchmark.inference")
     for task, metric, (mean, std) in expected_results:
         actual_val = results.results[task][metric]
         lo = mean - sigma_tol * std

@@ -25,12 +25,12 @@ class GeneralizedRCNN(nn.Module):
 
     def __init__(self, cfg):
         super(GeneralizedRCNN, self).__init__()
-
+        self.cfg = cfg.clone()
         self.backbone = build_backbone(cfg)
         self.rpn = build_rpn(cfg, self.backbone.out_channels)
         self.roi_heads = build_roi_heads(cfg, self.backbone.out_channels)
 
-    def forward(self, images, targets=None):
+    def forward(self, images, targets=None, logger=None):
         """
         Arguments:
             images (list[Tensor] or ImageList): images to be processed
@@ -49,7 +49,7 @@ class GeneralizedRCNN(nn.Module):
         features = self.backbone(images.tensors)
         proposals, proposal_losses = self.rpn(images, features, targets)
         if self.roi_heads:
-            x, result, detector_losses = self.roi_heads(features, proposals, targets)
+            x, result, detector_losses = self.roi_heads(features, proposals, targets, logger)
         else:
             # RPN-only models don't have roi_heads
             x = features
@@ -59,7 +59,9 @@ class GeneralizedRCNN(nn.Module):
         if self.training:
             losses = {}
             losses.update(detector_losses)
-            losses.update(proposal_losses)
+            if not self.cfg.MODEL.RELATION_ON:
+                # During the relationship training stage, the rpn_head should be fixed, and no loss. 
+                losses.update(proposal_losses)
             return losses
 
         return result

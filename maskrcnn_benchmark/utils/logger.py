@@ -3,6 +3,11 @@ import logging
 import os
 import sys
 
+DEBUG_PRINT_ON = True
+
+def debug_print(logger, info):
+    if DEBUG_PRINT_ON:
+        logger.info('#'*20+' '+info+' '+'#'*20)
 
 def setup_logger(name, save_dir, distributed_rank, filename="log.txt"):
     logger = logging.getLogger(name)

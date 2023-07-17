@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from maskrcnn_benchmark.layers import ROIAlign
+from maskrcnn_benchmark.modeling.make_layers import make_conv3x3
 
 from .utils import cat
 
@@ -51,8 +52,10 @@ class Pooler(nn.Module):
     can be inferred from the size of the feature map / size of original image,
     which is available thanks to the BoxList.
     """
-
-    def __init__(self, output_size, scales, sampling_ratio):
+    # NOTE: cat_all_levels is added for relationship detection. We want to concatenate 
+    # all levels, since detector is fixed in relation detection. Without concatenation
+    # if there is any difference among levels, it can not be finetuned anymore. 
+    def __init__(self, output_size, scales, sampling_ratio, in_channels=512, cat_all_levels=False):
         """
         Arguments:
             output_size (list[tuple[int]] or list[int]): output size for the pooled region
@@ -69,11 +72,16 @@ class Pooler(nn.Module):
             )
         self.poolers = nn.ModuleList(poolers)
         self.output_size = output_size
+        self.cat_all_levels = cat_all_levels
         # get the levels in the feature map by leveraging the fact that the network always
         # downsamples by a factor of 2 at each level.
         lvl_min = -torch.log2(torch.tensor(scales[0], dtype=torch.float32)).item()
         lvl_max = -torch.log2(torch.tensor(scales[-1], dtype=torch.float32)).item()
         self.map_levels = LevelMapper(lvl_min, lvl_max)
+        # reduce the channels
+        if self.cat_all_levels:
+            self.reduce_channel = make_conv3x3(in_channels * len(self.poolers), in_channels, dilation=1, stride=1, use_relu=True)
+
 
     def convert_to_roi_format(self, boxes):
         concat_boxes = cat([b.bbox for b in boxes], dim=0)
@@ -98,6 +106,7 @@ class Pooler(nn.Module):
         """
         num_levels = len(self.poolers)
         rois = self.convert_to_roi_format(boxes)
+        assert rois.size(0) > 0
         if num_levels == 1:
             return self.poolers[0](x[0], rois)
 
@@ -108,16 +117,21 @@ class Pooler(nn.Module):
         output_size = self.output_size[0]
 
         dtype, device = x[0].dtype, x[0].device
+        final_channels = num_channels * num_levels if self.cat_all_levels else num_channels
         result = torch.zeros(
-            (num_rois, num_channels, output_size, output_size),
+            (num_rois, final_channels, output_size, output_size),
             dtype=dtype,
             device=device,
         )
         for level, (per_level_feature, pooler) in enumerate(zip(x, self.poolers)):
-            idx_in_level = torch.nonzero(levels == level).squeeze(1)
-            rois_per_level = rois[idx_in_level]
-            result[idx_in_level] = pooler(per_level_feature, rois_per_level).to(dtype)
-
+            if self.cat_all_levels:
+                result[:,level*num_channels:(level+1)*num_channels,:,:] = pooler(per_level_feature, rois).to(dtype)
+            else:
+                idx_in_level = torch.nonzero(levels == level).squeeze(1)
+                rois_per_level = rois[idx_in_level]
+                result[idx_in_level] = pooler(per_level_feature, rois_per_level).to(dtype)
+        if self.cat_all_levels:
+            result = self.reduce_channel(result)
         return result
 
 

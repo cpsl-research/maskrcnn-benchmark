@@ -1,3 +1,6 @@
+*.pdf
+
+
 # compilation and distribution
 __pycache__
 _ext
