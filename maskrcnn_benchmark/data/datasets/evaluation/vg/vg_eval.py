@@ -1,18 +1,15 @@
-import logging
 import os
 import torch
 import numpy as np
 import json
-from tqdm import tqdm
-from functools import reduce
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
-from maskrcnn_benchmark.data import get_dataset_statistics
-from maskrcnn_benchmark.structures.bounding_box import BoxList
-from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou
-from maskrcnn_benchmark.utils.miscellaneous import intersect_2d, argsort_desc, bbox_overlaps
 from maskrcnn_benchmark.data.datasets.evaluation.vg.sgg_eval import SGRecall, SGNoGraphConstraintRecall, SGZeroShotRecall, SGNGZeroShotRecall, SGPairAccuracy, SGMeanRecall, SGNGMeanRecall, SGAccumulateRecall
+
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
+
 
 def do_vg_evaluation(
     cfg,
@@ -23,7 +20,8 @@ def do_vg_evaluation(
     iou_types,
 ):
     # get zeroshot triplet
-    zeroshot_triplet = torch.load("maskrcnn_benchmark/data/datasets/evaluation/vg/zeroshot_triplet.pytorch", map_location=torch.device("cpu")).long().numpy()
+    zst = os.path.join(dir_path, 'zeroshot_triplet.pytorch')
+    zeroshot_triplet = torch.load(zst, map_location=torch.device("cpu")).long().numpy()
 
     attribute_on = cfg.MODEL.ATTRIBUTE_ON
     num_attributes = cfg.MODEL.ROI_ATTRIBUTE_HEAD.NUM_ATTRIBUTES
